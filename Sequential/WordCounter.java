@@ -65,3 +65,4 @@ public class WordCounter {
 	}
 	
 }
+// vim:noexpandtab sw=8 softtabstop=8

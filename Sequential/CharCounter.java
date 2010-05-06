@@ -60,3 +60,4 @@ public class CharCounter {
 	}
 
 }
+// vim:noexpandtab sw=8 softtabstop=8
