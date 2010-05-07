@@ -1,0 +1,14 @@
+java projseq arg1 [arg...] text-files
+-a     = consider apostrophes in *grams
+                Do not use without -g option.
+                Do not use with -u option.
+-c     = give a-z character frequency
+                If used with -u, gives all characters
+-g x y = give top y x-grams
+-s     = consider spaces in *grams
+                Do not use without -g option.
+                Do not use with -u option.
+-w     = give word count
+                Does not consider punctuation.
+-u     = parse files in unicode
+                Do not use with -s or -a options.
