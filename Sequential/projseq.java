@@ -169,6 +169,10 @@ public class projseq {
        
         /* Create data holders */
         files = new File[args.length - index];
+        
+        if (files.length == 0) {
+            usage();
+        }
 		
 		for (int i = 0; index < args.length; ++index, ++i) {
 			if (args[index].charAt(0) == '-') {
