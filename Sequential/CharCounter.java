@@ -84,7 +84,6 @@ public class CharCounter {
 	 */
 	public String toString () {
 		String result = new String();
-
 		if (unicode) {
 			for (int i = 0; i < NUM_UNICODE; i++) {
 				if (chars[i] != 0) {
@@ -109,3 +108,4 @@ public class CharCounter {
 	} // toString
 
 } // CharCounter
+

@@ -37,6 +37,7 @@ public class Stargram {
      * Add a single character.
      */	
 	private void add (char c) {
+
 		if (last.length() < this.length) {
 			last += c;
 		}
@@ -59,6 +60,7 @@ public class Stargram {
     /**
      * Add the characters in the string.
      */	
+
 	public void add (String toAdd) {
 		for (int i = 0; i < toAdd.length(); ++i) {
 			add(toAdd.charAt(i));
@@ -127,3 +129,4 @@ public class Stargram {
 	} // top ()
 	
 } // Stargram
+

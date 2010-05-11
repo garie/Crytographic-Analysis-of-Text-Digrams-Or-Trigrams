@@ -51,11 +51,11 @@ public class WordCounter {
      */
     public String[] top () {
 		ArrayList<String> temp = new ArrayList<String>(numTop);
+
 		
 		for (Iterator<String> i = map.keySet().iterator(); i.hasNext(); ) {
 			String curr = i.next();
 			int currInt = map.get(curr);
-			
 			int index = -1;
 			for (int j = temp.size() - 1;
 				j >= 0 && (map.get(temp.get(j)).intValue() < currInt);
@@ -84,3 +84,4 @@ public class WordCounter {
     } // top
 	
 } // WordCounter
+
