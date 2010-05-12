@@ -21,6 +21,7 @@ public class Stargram {
 	private HashMap<String, Integer> map;
     
     /* The last characters added. */
+    private String first;
 	private String last;
 
     /**
@@ -30,6 +31,7 @@ public class Stargram {
 		this.length = length;
 		this.numTop = numTop;
 		map = new HashMap<String, Integer>(length * length);
+        first = new String();
 		last = new String();
 	} // Stargram
 
@@ -37,6 +39,10 @@ public class Stargram {
      * Add a single character.
      */	
 	private void add (char c) {
+        if (first.length() < this.length) {
+            last += c;
+        }
+
 		if (last.length() < this.length) {
 			last += c;
 		}
@@ -86,10 +92,25 @@ public class Stargram {
      * Use this when a new file is reached so you're not counting the
      * end of one file + the beginning of another.
      */	
-	public void clearLast () {
+	public void clear () {
+        first = new String();
 		last = new String();
 	} // clearLast
 
+    /**
+     * Return the first gram found.
+     */
+    public String getFirst () {
+        return first;
+    } // getFirst
+    
+    /**
+     * Return the last gram found.
+     */
+    public String getLast () {
+        return last;
+    } // getLast
+    
     /**
      * Gets the number of top *grams to print.
      */	

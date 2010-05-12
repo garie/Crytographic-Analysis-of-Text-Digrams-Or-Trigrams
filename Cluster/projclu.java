@@ -2,9 +2,21 @@
  * file: projclu.java
  */
 
-import java.util.Scanner;
+import edu.rit.mp.IntegerBuf;
+
+import edu.rit.pj.Comm;
+import edu.rit.pj.reduction.IntegerOp;
+import edu.rit.pj.reduction.ReduceArrays;
+
+import edu.rit.util.Arrays;
+import edu.rit.util.Range;
+
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+
+import java.util.HashMap;
+import java.util.Scanner;
 
 /**
  * Cluster implementation of Cryptographic Analyzer.
@@ -18,6 +30,13 @@ public class projclu {
     /* System independent newline character */
     public static final String NEWLINE = System.getProperty("line.separator");
     
+    /* Root processor */
+    public static final int ROOT = 0;
+    
+  	public static final int NOT_UNICODE = 26;
+	public static final int UNICODE = (int)Character.MAX_VALUE -
+                                      (int)Character.MIN_VALUE;
+
     /* Usage statement */
     public static final String USAGE = "java projclu arg1 [arg...] text-files";
                                        
@@ -37,11 +56,38 @@ public class projclu {
     static boolean keepSpaces = false;
     static boolean unicode    = false;
 	
-    /* Data containers */
-	static CharCounter charCount;
-	static WordCounter wordCount = null;
-	static File[] files;
+    /* Runtime */
+    static long start, end;
+    
+    /* Char containers */
+    static int totalCharCount;
+    static int[] totalCharArray;
+    static int[][] charCountArray;
+    static int[][] charArrayArray;
+	static CharCounter charCounter;
+    static IntegerBuf[] charCounts;
+    static IntegerBuf myCharCount;
+    static IntegerBuf[] charArrays;
+    static IntegerBuf myCharArray;
+
+    /* Word containers */
+	static WordCounter wordCounter = null;
+    static HashMap<String, Integer> map;
+
+	static String[] filenames;
 	static Stargram[] grams;
+    static int maxgram;
+    static String[] firstgrams;
+    static String[] lastgrams;
+    
+    static Range[] ranges;
+    static Range myrange;
+    static Range charRange;
+    
+    /* Communicator */
+    static Comm world;
+    static int size;
+    static int rank;
 	
     /**
      * main method
@@ -56,17 +102,77 @@ public class projclu {
      *           -a         Keep apostrophes
      *           -u         Unicode - implies keeping punctuation
      */
-    public static void main (String args[]) {
+    public static void main (String args[]) throws Exception {
+    
+        start = System.currentTimeMillis();
+    
+        Comm.init(args);
+        world = Comm.world();
+        rank = world.rank();
+        size = world.size();
+        ranges = new Range(0, size-1).subranges(size);
+        myrange = ranges[rank];
 	
 		parseArgs(args);
-
-        for (int i = 0; i < files.length; ++i) {
-			readFile(files[i]);
+        
+        
+        if (unicode) {
+            charRange = new Range(0, UNICODE-1);
+        }
+        else {
+            charRange = new Range(0, NOT_UNICODE-1);
+        }
+        charCountArray = new int[size][];
+        charArrayArray = new int[size][];
+        if (rank == ROOT) {
+            for (int i = 0; i < filenames.length; ++i) {
+                splitFile(new File(filenames[i]));
+            }
+            
+            Arrays.allocate(charCountArray, 1);
+            if (unicode) {
+                Arrays.allocate(charArrayArray, UNICODE);
+            }
+            else {
+                Arrays.allocate(charArrayArray, NOT_UNICODE);
+            }       
+        }
+        else {
+            Arrays.allocate(charCountArray, myrange, 1);
+            if (unicode) {
+                Arrays.allocate(charArrayArray, myrange, UNICODE);
+            }
+            else {
+                Arrays.allocate(charArrayArray, myrange, NOT_UNICODE);
+            }
+        }
+        
+        charCounts = IntegerBuf.rowSliceBuffers(charCountArray, ranges);
+        myCharCount = IntegerBuf.rowSliceBuffer(charCountArray, myrange);
+        charArrays = IntegerBuf.rowSliceBuffers(charArrayArray, ranges);
+        myCharArray = IntegerBuf.rowSliceBuffer(charArrayArray, myrange);
+        
+        for (int i = 0; i < filenames.length; ++i) {
+			readFile(filenames[i]);
+            
+            // Clear the "last" holder from the *grams for a new file.
+            if (findGrams) {
+                for (Stargram s : grams) {
+                    if (s.length() == maxgram) {
+                        firstgrams[i] = s.getFirst();
+                        lastgrams[i] = s.getLast();
+                    }
+                    s.clear();
+                }
+            }
         }
 
-        reduce();
+        gatherAndReduce();
         
-		print();
+        end = System.currentTimeMillis();
+        if (rank == ROOT) {
+            print();
+        }
 		
     } // main
 	
@@ -107,17 +213,18 @@ public class projclu {
             }
         }
         grams = new Stargram[numgrams];
+        maxgram = 0;
         numgrams = 0;
         		        
         /* Parse args */
         for (int i = 0; i < args.length; ++i) {
 			if (args[i].equals(ARG_WORDS)) {
                 System.out.println("DEBUG: Finding words");
-				if (findWords || wordCount != null) {
+				if (findWords || wordCounter != null) {
 					usage();
 				}
                 findWords = true;
-                wordCount = new WordCounter(Integer.parseInt(args[++i]));
+                wordCounter = new WordCounter(Integer.parseInt(args[++i]));
             }
             else if (args[i].equals(ARG_CHARS)) {
                 System.out.println("DEBUG: Finding chars");
@@ -129,8 +236,12 @@ public class projclu {
             else if (args[i].equals(ARG_GRAMS)) {
                 System.out.println("DEBUG: Finding grams");
                 findGrams = true;
-                grams[numgrams++] = new Stargram(Integer.parseInt(args[++i]),
-                                                 Integer.parseInt(args[++i]));
+                grams[numgrams] = new Stargram(Integer.parseInt(args[++i]),
+                                               Integer.parseInt(args[++i]));
+                if (grams[numgrams].length() < maxgram) {
+                    maxgram = grams[numgrams].length();
+                }
+                ++numgrams;
             }
             else if (args[i].equals(ARG_UNICODE)) {
                 System.out.println("DEBUG: Unicode");
@@ -160,7 +271,7 @@ public class projclu {
                 usage();
             }
         }
-		
+        
 		if ((keepSpaces || keepApost) && !findGrams) {
 			usage();
 		}
@@ -170,9 +281,9 @@ public class projclu {
 		}
        
         /* Create data holders */
-        files = new File[args.length - index];
+        filenames = new String[args.length - index];
         
-        if (files.length == 0) {
+        if (filenames.length == 0) {
             usage();
         }
 		
@@ -180,10 +291,15 @@ public class projclu {
 			if (args[index].charAt(0) == '-') {
 				usage();
 			}
-			files[i] = new File(args[index]);
+			filenames[i] = args[index];
 		}
+        
+        if (findGrams) {
+            firstgrams = new String[filenames.length];
+            lastgrams = new String[filenames.length];
+        }
 
-        charCount = new CharCounter(unicode);
+        charCounter = new CharCounter(unicode);
 
 	} // parseArgs
 	
@@ -193,9 +309,9 @@ public class projclu {
 	static void print() {
 	    System.out.println();
         if (findWords) {
-            System.out.println("TOP " + wordCount.getNumTop() +
+            System.out.println("TOP " + wordCounter.getNumTop() +
                                " WORDS" + NEWLINE);
-            String[] topW = wordCount.top();
+            String[] topW = wordCounter.top();
             for (String s : topW) {
                 System.out.println(s);
             }
@@ -203,7 +319,8 @@ public class projclu {
         }
         if (findChars) {
             System.out.println("CHAR\tCOUNT\t\tPERCENTAGE" + NEWLINE);
-            System.out.println(charCount.toString() + NEWLINE + NEWLINE);
+            CharCounter cc = new CharCounter(totalCharCount, totalCharArray);
+            System.out.println(cc.toString() + NEWLINE + NEWLINE);            
         } 
         if (findGrams) {
             for (Stargram st : grams) {
@@ -216,19 +333,22 @@ public class projclu {
                 System.out.println(NEWLINE);
             }
         }
+        
+        System.out.println((end - start) + " msec");
 	} // print
 	
     /**
      * readFile - read and parse a file
      */
-	static void readFile (File filename) {
-        // TODO: clusterize this section
+	static void readFile (String filename) {
 	    Scanner sc = null;
         try {
-			sc = new Scanner(filename);
+			sc = new Scanner(new File(filename + (char)(rank + 'a')));
                 
 		    while (sc.hasNext()) {
+                
                 String curr = sc.nextLine().trim();
+
                 if (!unicode) {
                     // Non alpha, space, and punctuation chars removed
                     curr = curr.toLowerCase().replaceAll("[^a-z ']", " ");
@@ -248,16 +368,16 @@ public class projclu {
                     }
                     while (sc2.hasNext()) {
                         String curr2 = sc2.next();
-                        wordCount.add(curr2);
+                        wordCounter.add(curr2);
                     }
                 }
                 if (findChars) {
                     if (unicode) {
-                        charCount.add(curr);
+                        charCounter.add(curr);
                     }
                     else {
                         // Never include non-alpha characters.
-                        charCount.add(curr.replaceAll("[^a-z]", ""));
+                        charCounter.add(curr.replaceAll("[^a-z]", ""));
                     }
                 }
                 if (findGrams) {
@@ -274,11 +394,6 @@ public class projclu {
                     }
                 }
             }
-
-            // Clear the "last" holder from the *grams for a new file.
-            for (Stargram s : grams) {
-                s.clearLast();
-            }
                 
         } catch (FileNotFoundException e) {
             System.err.println(e.getMessage());
@@ -290,15 +405,67 @@ public class projclu {
 	} // readFile
 
     /**
-     * Reduce all the data sets to the root.
+     * Gather data to root and reduce all the data sets.
      */
-    static void reduce () {
-    	// charCount
+    static void gatherAndReduce () throws Exception {
+
+        //static CharCounter charCounter;
+        //static IntegerBuf[] charCounts;
+        //static IntegerBuf mycharCount;
+        //static IntegerBuf[] charArrays;
+        //static IntegerBuf myCharArray;
         
-        // wordCount
+        //static WordCounter wordCounter = null;
+        //static Stargram[] grams;
+        //static String[] firstgrams;
+        //static String[] lastgrams;
+
+        if (findChars) {
+            charCountArray[rank][0] = charCounter.getCharCount();
+            charArrayArray[rank] = charCounter.getCharArray();
         
-        // grams
-    } // reduce
+            world.gather (ROOT, myCharCount, charCounts);
+            world.gather (ROOT, myCharArray, charArrays);
+            
+            if (rank == ROOT) {
+                totalCharCount = 0;
+                if (unicode) {
+                    totalCharArray = new int[UNICODE];
+                }
+                else {
+                    totalCharArray = new int[NOT_UNICODE];
+                }
+                for (int i = 0; i < size; ++i) {
+                    totalCharCount += charCountArray[i][0];
+                    ReduceArrays.reduce(charArrayArray[i], charRange,
+                                        totalCharArray, charRange, IntegerOp.SUM);
+                }
+            }
+        }
+        
+        if (findWords) {
+        
+        }
+        
+        if (findGrams) {
+            // firstgrams
+            // lastgrams
+        }
+    } // gatherAndReduce
+    
+    /**
+     * Split each file into (size) equal parts.
+     */
+    static void splitFile (File filename) {
+        long filesize = filename.length();
+        filesize += filesize % size;
+        try {
+            Runtime.getRuntime().exec("split -b " + (filesize / size) +
+                                      " -a 1 " + filename + " " + filename);
+        } catch (IOException ioe) {
+            System.err.println(ioe.getMessage());
+        }
+    }
     
     /**
      * usage - print the usage statement and exit

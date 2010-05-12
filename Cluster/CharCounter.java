@@ -39,6 +39,20 @@ public class CharCounter {
 	} // CharCounter
 	
     /**
+     * Creates a new CharCounter object with the chars already counted.
+     */
+    public CharCounter (int totalChars, int[] chars) {
+        this.totalChars = totalChars;
+        this.chars = chars;
+        if (chars.length == NUM_CHARS) {
+            unicode = false;
+        }
+        else {
+            unicode = true;
+        }
+    }
+    
+    /**
      * Adds a single character.
      */
 	private void add (char c) {
@@ -75,15 +89,18 @@ public class CharCounter {
 	}
 	
     /**
-     * Reduce other CharCounter into this one.
-     * May not be necessary due to reduce(int[]) method
+     * Return char count array.
      */
-    public void reduce (CharCounter other) {
-        for (int i = 0; i < chars.length; ++i) {
-            this.chars[i] += other.chars[i];
-        }
-        this.totalChars += other.totalChars;
-    } // reduce
+    public int[] getCharArray () {
+        return chars;
+    } // getCharArray
+    
+    /**
+     * Returns the total character count.
+     */
+    public int getCharCount () {
+        return totalChars;
+    } // getCharCount
     
 	/**
 	 * Returns string of format:
