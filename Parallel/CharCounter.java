@@ -75,6 +75,32 @@ public class CharCounter {
 	}
 	
 	/**
+	 * getChars
+	 */
+	public int[] getChars() {
+		return chars;
+	}
+
+	/**
+	 * getTotal
+	 */
+	public int getTotal() {
+		return totalChars;
+	}
+
+	/**
+	 * reduce
+	 */
+	public synchronized void reduce( CharCounter other ) {
+		int[] otherChars = other.getChars();
+
+		for( int i = 0; i < 26; i++ ) {
+			this.chars[i] += otherChars[i];
+		}
+		this.totalChars += other.getTotal();
+	}
+
+	/**
 	 * Returns string of format:
 	 *
 	 * a	num		percent

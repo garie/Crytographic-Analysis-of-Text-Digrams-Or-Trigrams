@@ -1,11 +1,15 @@
 /*
- * file: projseq.java
+ * file: projsmp.java
  */
 
 import java.util.Scanner;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
+import edu.rit.pj.ParallelTeam;
+import edu.rit.pj.ParallelRegion;
 /**
  * Sequential implementation of Cryptographic Analyzer.
  *
@@ -13,13 +17,13 @@ import java.io.FileNotFoundException;
  * @author cev5122: Christine Viets
  */
 
-public class projseq {
+public class projsmp {
 
     /* System independent newline character */
     public static final String NEWLINE = System.getProperty("line.separator");
     
     /* Usage statement */
-    public static final String USAGE = "java projseq arg1 [arg...] text-files";
+    public static final String USAGE = "java projsmp arg1 [arg...] text-files";
                                        
     /* Argument strings */
     public static final String ARG_WORDS   = "-w";
@@ -56,15 +60,19 @@ public class projseq {
      *           -a         Keep apostrophes
      *           -u         Unicode - implies keeping punctuation
      */
-    public static void main (String args[]) {
+    public static void main (String args[]) throws Exception{
 	
-		parseArgs(args);
+	    long t = System.currentTimeMillis();
 
-        for (int i = 0; i < files.length; ++i) {
-			readFile(files[i]);
-        }
+	    parseArgs(args);
 
-		print();
+	    for (int i = 0; i < files.length; ++i) {
+		    readFile(files[i]);
+	    }
+
+	    print();
+	    
+	    System.out.println( "Runtime: " + (System.currentTimeMillis() - t) + "msec" );
 		
     } // main
 	
@@ -219,100 +227,157 @@ public class projseq {
     /**
      * readFile - read and parse a file
      */
-	static void readFile (File filename) {
-	    Scanner sc = null;
-        try {
-			sc = new Scanner(filename);
-                
-		    while (sc.hasNext()) {
-                String curr = sc.nextLine().trim();
-                if (!unicode) {
-                    // Non alpha, space, and punctuation chars removed
-                    curr = curr.toLowerCase().replaceAll("[^a-z ']", " ");
-                    if (!keepApost) {
-                        // Apostrophes removed
-                        curr = curr.replaceAll("[']", "");
-                    }
-                }
-                if (findWords) {
-                    Scanner sc2 = null;
-                    if (unicode) {
-                        sc2 = new Scanner(curr);
-                    }
-                    else {
-                        // Never include punctuation in words.
-                        sc2 = new Scanner(curr.replaceAll("[^a-z ]", ""));
-                    }
-                    while (sc2.hasNext()) {
-                        String curr2 = sc2.next();
-                        wordCount.add(curr2);
-                    }
-                }
-                if (findChars) {
-                    if (unicode) {
-                        charCount.add(curr);
-                    }
-                    else {
-                        // Never include non-alpha characters.
-                        charCount.add(curr.replaceAll("[^a-z]", ""));
-                    }
-                }
-                if (findGrams) {
-                    if (!keepSpaces) {
-                        curr = curr.replaceAll(" ", "");
-                    }
-                    else {
-                        // Add a space to the end of the line for word end.
-                        curr += " ";
-                    }
+	static void readFile (final File filename) throws Exception{
+	    final BlockingQueue<String> readQueue = 
+		    new LinkedBlockingQueue<String>();
 
-                    for (Stargram s : grams) {
-                        s.add(curr);
-                    }
-                }
-            }
+	    new Thread() {
+		    public void run() {
+			    Scanner input = null;
+			    String readVal;
 
-            // Clear the "last" holder from the *grams for a new file.
-            for (Stargram s : grams) {
-                s.clearLast();
-            }
-                
-        } catch (FileNotFoundException e) {
-            System.err.println(e.getMessage());
-        } finally {
-            if (sc != null) {
-                sc.close();
-            }
-        }
+			    try {
+				    input = new Scanner(filename);
+				    while( input.hasNextLine() ){
+					    try {
+					    	    readVal = input.nextLine();
+						    if( !readVal.equals( "" ) ) {
+							    readQueue.put( readVal );
+							    //System.out.println( "IN: " + readVal );
+						    }
+
+					    } catch( Exception e ) {
+						    System.err.println( e.getMessage() );
+						    break;
+					    }
+				    }
+			    } catch (FileNotFoundException e) {
+				    System.err.println(e.getMessage());
+			    } finally {
+				    if (input != null) {
+					    input.close();
+				    }
+			    }
+
+			    try {
+				    readQueue.put( "" );
+			    } catch( Exception e ) {
+				    System.err.println( e.getMessage() );
+			    }
+
+		    }
+	    }.start();
+
+	    new ParallelTeam( ParallelTeam.getDefaultThreadCount() - 1).execute( new ParallelRegion() {
+
+		    public void run() throws Exception{
+
+			    CharCounter chCount = new CharCounter( unicode );
+			    WordCounter wCount = new WordCounter( projsmp.wordCount.getNumTop() );
+			    Stargram[] gCount = new Stargram[ grams.length ];
+			    for( int i = 0; i < grams.length; i++ ){
+				gCount[i] = new Stargram( grams[i].length(), grams[i].getNumTop() );
+			    }
+			    
+			    // Local objects of each type to avoid synchonization issues
+			    while ( true ) {
+				    String curr = readQueue.take();
+				    //System.out.println( "OUT: " + curr );
+
+				    if( curr.equals( "" ) ) {
+					    readQueue.put( "" );
+					    break;
+				    }
+				    curr = curr.trim();
+
+				    if (!unicode) {
+					    // Non alpha, space, and punctuation chars removed
+					    curr = curr.toLowerCase().replaceAll("[^a-z ']", " ");
+					    if (!keepApost) {
+						    // Apostrophes removed
+						    curr = curr.replaceAll("[']", "");
+					    }
+				    }
+				    if (findWords) {
+					    Scanner sc2 = null;
+					    if (unicode) {
+						    sc2 = new Scanner(curr);
+					    }
+					    else {
+						    // Never include punctuation in words.
+						    sc2 = new Scanner(curr.replaceAll("[^a-z ]", ""));
+					    }
+					    while (sc2.hasNext()) {
+						    String curr2 = sc2.next();
+						    wCount.add(curr2);
+					    }
+				    }
+				    if (findChars) {
+					    if (unicode) {
+						    chCount.add(curr);
+					    }
+					    else {
+						    // Never include non-alpha characters.
+						    chCount.add(curr.replaceAll("[^a-z]", ""));
+					    }
+				    }
+				    if (findGrams) {
+					    if (!keepSpaces) {
+						    curr = curr.replaceAll(" ", "");
+					    }
+					    else {
+						    // Add a space to the end of the line for word end.
+						    curr += " ";
+					    }
+
+					    for (Stargram s : gCount) {
+						    s.add(curr);
+					    }
+				    }
+				    // Clear the "last" holder from the *grams for a new file.
+				    for (Stargram s : gCount) {
+					    s.clear();
+				    }
+			    } // end while
+			    projsmp.wordCount.reduce( wCount );
+			    projsmp.charCount.reduce( chCount );
+			    for( int i = 0; i < gCount.length; i++ ) {
+				    grams[i].reduce( gCount[i] );
+			    }
+
+		    } // end run
+
+	    });
+
 	} // readFile
 
-    /**
-     * usage - print the usage statement and exit
-     */
-    private static void usage() {
-        System.out.println(USAGE); //java projseq arg1 [arg...] text-files
-        
-        System.out.println("-a     = consider apostrophes in *grams");
-        System.out.println("\t\tDo not use without -g option.");
-        System.out.println("\t\tDo not use with -u option.");
+	/**
+	 * usage - print the usage statement and exit
+	 */
+	private static void usage() {
+		System.out.println(USAGE); //java projsmp arg1 [arg...] text-files
 
-        System.out.println("-c     = give a-z character frequency");
-        System.out.println("\t\tIf used with -u, gives all characters");
-        
-        System.out.println("-g x y = give top y x-grams");
-        
-        System.out.println("-s     = consider spaces in *grams");
-        System.out.println("\t\tDo not use without -g option.");
-        System.out.println("\t\tDo not use with -u option.");
+		System.out.println("-a     = consider apostrophes in *grams");
+		System.out.println("\t\tDo not use without -g option.");
+		System.out.println("\t\tDo not use with -u option.");
 
-        System.out.println("-w     = give word count");
-        System.out.println("\t\tDoes not consider punctuation.");
-        
-        System.out.println("-u     = parse files in unicode");
-        System.out.println("\t\tDo not use with -s or -a options.");
-		
-        System.exit(1);
-    }
-          
-} // projseq
+		System.out.println("-c     = give a-z character frequency");
+		System.out.println("\t\tIf used with -u, gives all characters");
+
+		System.out.println("-g x y = give top y x-grams");
+
+		System.out.println("-s     = consider spaces in *grams");
+		System.out.println("\t\tDo not use without -g option.");
+		System.out.println("\t\tDo not use with -u option.");
+
+		System.out.println("-w     = give word count");
+		System.out.println("\t\tDoes not consider punctuation.");
+
+		System.out.println("-u     = parse files in unicode");
+		System.out.println("\t\tDo not use with -s or -a options.");
+
+		System.exit(1);
+	}
+
+} // projsmp
 // vim:noexpandtab sw=8 softtabstop=8

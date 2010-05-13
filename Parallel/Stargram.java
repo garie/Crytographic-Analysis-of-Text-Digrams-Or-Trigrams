@@ -21,6 +21,7 @@ public class Stargram {
 	private HashMap<String, Integer> map;
     
     /* The last characters added. */
+    private String first;
 	private String last;
 
     /**
@@ -30,6 +31,7 @@ public class Stargram {
 		this.length = length;
 		this.numTop = numTop;
 		map = new HashMap<String, Integer>(length * length);
+        first = new String();
 		last = new String();
 	} // Stargram
 
@@ -37,6 +39,10 @@ public class Stargram {
      * Add a single character.
      */	
 	private void add (char c) {
+        if (first.length() < this.length) {
+            last += c;
+        }
+
 		if (last.length() < this.length) {
 			last += c;
 		}
@@ -66,15 +72,45 @@ public class Stargram {
 	} // add (String)
 
     /**
+     * Add 'count' to the given gram.
+     * Used in reduction.
+     * TODO: deal with last.
+     */
+    private void add (String gram, Integer count) {
+        Integer i = map.get(gram);
+		if (i != null) {
+            map.put(gram, i + count);
+		}
+		else {
+			map.put(gram, count);
+		}
+    } // add (String, Integer)
+    
+    /**
      * Clear the last part read.
      *
      * Use this when a new file is reached so you're not counting the
      * end of one file + the beginning of another.
      */	
-	public void clearLast () {
+	public void clear () {
+        first = new String();
 		last = new String();
 	} // clearLast
 
+    /**
+     * Return the first gram found.
+     */
+    public String getFirst () {
+        return first;
+    } // getFirst
+    
+    /**
+     * Return the last gram found.
+     */
+    public String getLast () {
+        return last;
+    } // getLast
+    
     /**
      * Gets the number of top *grams to print.
      */	
@@ -89,6 +125,17 @@ public class Stargram {
 		return this.length;
 	} // length
 
+    /**
+     * Reduces the grams in other with this one.
+     * TODO: deal with "last"
+     */
+    public synchronized void reduce (Stargram other) {
+        for (String s : other.map.keySet()) {
+            Integer i = other.map.get(s);
+            add(s, i);
+        }
+    } // reduce
+    
     /**
      * Returns String representations of the top numTop *grams.
      */	
@@ -126,4 +173,4 @@ public class Stargram {
 		return result;
 	} // top ()
 	
-} // Stargram// vim:noexpandtab sw=8 softtabstop=8
+} // Stargram vim:noexpandtab sw=8 softtabstop=8
