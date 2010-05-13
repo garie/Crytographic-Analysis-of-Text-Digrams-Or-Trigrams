@@ -40,7 +40,7 @@ public class Stargram {
      */	
 	private void add (char c) {
         if (first.length() < this.length) {
-            last += c;
+            first += c;
         }
 
 		if (last.length() < this.length) {

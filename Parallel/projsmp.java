@@ -270,7 +270,9 @@ public class projsmp {
 		    }
 	    }.start();
 
-	    new ParallelTeam( ParallelTeam.getDefaultThreadCount() - 1).execute( new ParallelRegion() {
+	    new ParallelTeam( ParallelTeam.getDefaultThreadCount() - 1 != 0 ?
+			    ParallelTeam.getDefaultThreadCount() - 1 : 
+			    1 ).execute( new ParallelRegion() {
 
 		    public void run() throws Exception{
 
