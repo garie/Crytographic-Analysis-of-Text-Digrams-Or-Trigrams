@@ -563,3 +563,4 @@ public class projclu {
     } // wordCluster
 
 } // projclu
+// vim:noexpandtab sw=8 softtabstop=8

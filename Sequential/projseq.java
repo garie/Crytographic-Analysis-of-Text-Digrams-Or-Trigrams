@@ -324,3 +324,4 @@ public class projseq {
     }
           
 } // projseq
+// vim:noexpandtab sw=8 softtabstop=8
