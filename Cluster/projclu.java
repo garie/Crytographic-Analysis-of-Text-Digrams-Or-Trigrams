@@ -16,6 +16,8 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 
+import java.lang.InstantiationException;
+
 import java.util.HashMap;
 import java.util.Scanner;
 
@@ -64,11 +66,11 @@ public class projclu {
     static long start, end;
     
     /* Char containers */
+	static CharCounter charCounter;
     static int totalCharCount;
     static int[] totalCharArray;
     static int[][] charCountArray;
     static int[][] charArrayArray;
-	static CharCounter charCounter;
     static IntegerBuf[] charCounts;
     static IntegerBuf myCharCount;
     static IntegerBuf[] charArrays;
@@ -76,17 +78,25 @@ public class projclu {
 
     /* Word containers */
 	static WordCounter wordCounter = null;
-    //static HashMap<String, Integer> totalWordMap;
-    static WordCounter totalWordCounter;
     static HashMap<String, Integer>[][] wordMapArray;
     static ObjectBuf<HashMap<String, Integer>>[] mapBufs;
     static ObjectBuf<HashMap<String, Integer>> myMap;
 
-	static String[] filenames;
-	static Stargram[] grams;
+    /* Gram containers */
     static int maxgram;
-    static String[] firstgrams;
-    static String[] lastgrams;
+	static Stargram[] grams;
+    static Stargram[][] gramArray;
+    static ObjectBuf<Stargram>[] gramBufs;
+    static ObjectBuf<Stargram> myGram;
+    static String[][] firstgrams;
+    static String[][] lastgrams;
+    static ObjectBuf<String>[] firstBufs;
+    static ObjectBuf<String> myFirstBuf;
+    static ObjectBuf<String>[] lastBufs;
+    static ObjectBuf<String> myLastBuf;
+
+    /* filenames... */
+	static String[] filenames;
     
     static Range[] ranges;
     static Range myrange;
@@ -96,7 +106,7 @@ public class projclu {
     static Comm world;
     static int size;
     static int rank;
-	
+    
     /**
      * main method
      *
@@ -132,6 +142,10 @@ public class projclu {
             if (rank == ROOT) {
                 splitFile(new File(filenames[i]));
             }
+            else {
+                //TODO: use wait and notify?
+                Thread.currentThread().sleep(2000);
+            }
         }
         
         if (findChars) {
@@ -139,6 +153,9 @@ public class projclu {
         }
         if (findWords) {
             wordCluster();
+        }
+        if (findGrams) {
+            gramCluster();
         }
         
         for (int i = 0; i < filenames.length; ++i) {
@@ -148,8 +165,8 @@ public class projclu {
             if (findGrams) {
                 for (Stargram s : grams) {
                     if (s.length() == maxgram) {
-                        firstgrams[i] = s.getFirst();
-                        lastgrams[i] = s.getLast();
+                        firstgrams[rank][i] = s.getFirst();
+                        lastgrams[rank][i] = s.getLast();
                     }
                     s.clear();
                 }
@@ -201,7 +218,127 @@ public class projclu {
         charArrays = IntegerBuf.rowSliceBuffers(charArrayArray, ranges);
         myCharArray = IntegerBuf.rowSliceBuffer(charArrayArray, myrange);
     } // charCluster
+  
+    /**
+     * Gather data to root and reduce all the data sets.
+     */
+     static void gatherAndReduce () throws Exception {
+
+        if (findChars) {
+            charCountArray[rank][0] = charCounter.getCharCount();
+            charArrayArray[rank] = charCounter.getCharArray();
+        
+            world.gather (ROOT, myCharCount, charCounts);
+            world.gather (ROOT, myCharArray, charArrays);
+            
+            if (rank == ROOT) {
+                totalCharCount = 0;
+                if (unicode) {
+                    totalCharArray = new int[UNICODE];
+                }
+                else {
+                    totalCharArray = new int[NOT_UNICODE];
+                }
+                for (int i = 0; i < size; ++i) {
+                    totalCharCount += charCountArray[i][0];
+                    ReduceArrays.reduce(charArrayArray[i], charRange,
+                                        totalCharArray, charRange, IntegerOp.SUM);
+                }
+            }
+        }
+        
+        if (findWords) {
+            wordMapArray[rank][0] = wordCounter.getMap();
+        
+            world.gather (ROOT, myMap, mapBufs);
+            
+            if (rank == ROOT) {
+                for (int i = 1; i < size; ++i) {
+                    wordCounter.reduce(wordMapArray[i][0]);
+                }
+            }
+        }
+        
+        if (findGrams) {
+            
+            gramArray[rank] = grams;
+        
+            world.gather (ROOT, myGram, gramBufs);
+            world.gather (ROOT, myFirstBuf, firstBufs);
+            world.gather (ROOT, myLastBuf, lastBufs);
+            
+            if (rank == ROOT) {
+
+                for (int i = 1; i < size; ++i) {
+                    for (int j = 0; j < grams.length; ++j) {
+                        grams[j].reduce(gramArray[i][j]);
+
+                        for (int h = 0; (i + 1 < size) &&
+                                        (h < filenames.length); ++h) {
+                            int len = grams[j].length();
+                            String f = firstgrams[i+1][h];
+                            f = f.substring(0, len - 1);
+                            String l = lastgrams[i][h];
+                            l = l.substring(l.length() - len);
+                            while (l.length() > 0) {
+                                grams[j].addOne(l +
+                                           f.substring(0, len - l.length()));
+                                l = l.substring(1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } // gatherAndReduce
     
+    /**
+     * Cluster stuff for *grams
+     */
+     private static void gramCluster () {
+        
+        gramArray = new Stargram[size][];
+        firstgrams = new String[size][];
+        lastgrams = new String[size][];
+        if (rank == ROOT) {
+            try {
+                Arrays.allocate(gramArray, grams.length,
+                                (new Stargram(0,0)).getClass());
+                Arrays.allocate(firstgrams, filenames.length,
+                                (new String()).getClass());
+                Arrays.allocate(lastgrams, filenames.length,
+                                (new String()).getClass());
+            } catch (InstantiationException ie) {
+                System.err.println(ie.getMessage());
+            } catch (IllegalAccessException iae) {
+                System.err.println(iae.getMessage());
+            }
+        }
+        else {
+            try {
+                Arrays.allocate(gramArray, myrange, grams.length,
+                                (new Stargram(0,0)).getClass());
+                Arrays.allocate(firstgrams, myrange, filenames.length,
+                                (new String()).getClass());
+                Arrays.allocate(lastgrams, myrange, filenames.length,
+                                (new String()).getClass());
+            } catch (InstantiationException ie) {
+                System.err.println(ie.getMessage());
+            } catch (IllegalAccessException iae) {
+                System.err.println(iae.getMessage());
+            }
+        }
+        
+        gramBufs = ObjectBuf.rowSliceBuffers(gramArray, ranges);
+        myGram = ObjectBuf.rowSliceBuffer(gramArray, myrange);
+        
+        firstBufs = ObjectBuf.rowSliceBuffers(firstgrams, ranges);
+        myFirstBuf = ObjectBuf.rowSliceBuffer(firstgrams, myrange);
+        
+        lastBufs = ObjectBuf.rowSliceBuffers(lastgrams, ranges);
+        myLastBuf = ObjectBuf.rowSliceBuffer(lastgrams, myrange);
+    } // gramCluster
+
     /**
      * parseArgs - parse the command line arguments
      */
@@ -245,7 +382,6 @@ public class projclu {
         /* Parse args */
         for (int i = 0; i < args.length; ++i) {
 			if (args[i].equals(ARG_WORDS)) {
-                System.out.println("DEBUG: Finding words");
 				if (findWords || wordCounter != null) {
 					usage();
 				}
@@ -253,38 +389,33 @@ public class projclu {
                 wordCounter = new WordCounter(Integer.parseInt(args[++i]));
             }
             else if (args[i].equals(ARG_CHARS)) {
-                System.out.println("DEBUG: Finding chars");
 				if (findChars) {
 					usage();
 				}
                 findChars = true;
             }
             else if (args[i].equals(ARG_GRAMS)) {
-                System.out.println("DEBUG: Finding grams");
                 findGrams = true;
                 grams[numgrams] = new Stargram(Integer.parseInt(args[++i]),
                                                Integer.parseInt(args[++i]));
-                if (grams[numgrams].length() < maxgram) {
+                if (grams[numgrams].length() > maxgram) {
                     maxgram = grams[numgrams].length();
                 }
                 ++numgrams;
             }
             else if (args[i].equals(ARG_UNICODE)) {
-                System.out.println("DEBUG: Unicode");
 				if (unicode) {
 					usage();
 				}
                 unicode = true;
             }
             else if (args[i].equals(ARG_SPACES)) {
-                System.out.println("DEBUG: Keep spaces");
 				if (keepSpaces) {
 					usage();
 				}
                 keepSpaces = true;
             }
             else if (args[i].equals(ARG_APOST)) {
-                System.out.println("DEBUG: Keep apostrophes");
 				if (keepApost) {
 					usage();
 				}
@@ -320,11 +451,6 @@ public class projclu {
 			filenames[i] = args[index];
 		}
         
-        if (findGrams) {
-            firstgrams = new String[filenames.length];
-            lastgrams = new String[filenames.length];
-        }
-
         charCounter = new CharCounter(unicode);
 
 	} // parseArgs
@@ -367,7 +493,7 @@ public class projclu {
      * readFile - read and parse a file
      */
 	static void readFile (String filename) {
-	    Scanner sc = null;
+ 	    Scanner sc = null;
         try {
 			sc = new Scanner(new File(filename + (char)(rank + 'a')));
                 
@@ -420,6 +546,12 @@ public class projclu {
                     }
                 }
             }
+            
+            try {
+                Runtime.getRuntime().exec("rm " + filename + (char)(rank + 'a'));
+            } catch (IOException ioe) {
+                System.err.println(ioe.getMessage());
+            }
                 
         } catch (FileNotFoundException e) {
             System.err.println(e.getMessage());
@@ -429,80 +561,20 @@ public class projclu {
             }
         }
 	} // readFile
-
-    /**
-     * Gather data to root and reduce all the data sets.
-     */
-    static void gatherAndReduce () throws Exception {
-
-        if (findChars) {
-            charCountArray[rank][0] = charCounter.getCharCount();
-            charArrayArray[rank] = charCounter.getCharArray();
-        
-            world.gather (ROOT, myCharCount, charCounts);
-            world.gather (ROOT, myCharArray, charArrays);
-            
-            if (rank == ROOT) {
-                totalCharCount = 0;
-                if (unicode) {
-                    totalCharArray = new int[UNICODE];
-                }
-                else {
-                    totalCharArray = new int[NOT_UNICODE];
-                }
-                for (int i = 0; i < size; ++i) {
-                    totalCharCount += charCountArray[i][0];
-                    ReduceArrays.reduce(charArrayArray[i], charRange,
-                                        totalCharArray, charRange, IntegerOp.SUM);
-                }
-            }
-        }
-        
-        if (findWords) {
-            //charCountArray[rank][0] = charCounter.getCharCount();
-            //charArrayArray[rank] = charCounter.getCharArray();
-            wordMapArray[rank][0] = wordCounter.getMap();
-        
-            //world.gather (ROOT, myCharCount, charCounts);
-            //world.gather (ROOT, myCharArray, charArrays);
-            world.gather (ROOT, myMap, mapBufs);
-            
-            if (rank == ROOT) {
-            //    totalCharCount = 0;
-                //totalWordMap = new HashMap<String, Integer>();
-                totalWordCounter = new WordCounter(wordCounter.getNumTop());
-            //    if (unicode) {
-            //        totalCharArray = new int[UNICODE];
-            //    }
-            //    else {
-            //        totalCharArray = new int[NOT_UNICODE];
-            //    }
-                for (int i = 0; i < size; ++i) {
-                    totalWordCounter.reduce(wordMapArray[i][0]);
-            //        totalCharCount += charCountArray[i][0];
-            //        ReduceArrays.reduce(charArrayArray[i], charRange,
-            //                            totalCharArray, charRange, IntegerOp.SUM);
-                }
-            }
-        }
-        
-        if (findGrams) {
-            // firstgrams
-            // lastgrams
-        }
-    } // gatherAndReduce
     
     /**
      * Split each file into (size) equal parts.
      */
     static void splitFile (File filename) {
         long filesize = filename.length();
-        filesize += filesize % size;
+        filesize += (size - filesize % size);
         try {
             Runtime.getRuntime().exec("split -b " + (filesize / size) +
-                                      " -a 1 " + filename + " " + filename);
+                                      " -a 1 " + filename + " " + filename).waitFor();
         } catch (IOException ioe) {
             System.err.println(ioe.getMessage());
+        } catch (InterruptedException ie) {
+            System.err.println(ie.getMessage());
         }
     }
     
@@ -539,28 +611,30 @@ public class projclu {
     /**
      * Initialize the word cluster variables.
      */
+    @SuppressWarnings("unchecked")
     private static void wordCluster() {
-        //charRange = new Range(0, UNICODE-1);
-        //charCountArray = new int[size][];
-        wordMapArray = new HashMap<String, Integer>[size][];
+        wordMapArray = new HashMap[size][];
         if (rank == ROOT) {
-            Arrays.allocate(wordMapArray, 1, totalWordMap.getClass());
-            //Arrays.allocate(int[][] charCountArray, 1);
-            //Arrays.allocate(charArrayArray, UNICODE);
+            try {
+                Arrays.allocate(wordMapArray, 1, (new HashMap<String, Integer>()).getClass());
+            } catch (InstantiationException ie) {
+                System.err.println(ie.getMessage());
+            } catch (IllegalAccessException iae) {
+                System.err.println(iae.getMessage());
+            }
         }
         else {
-            Arrays.allocate(wordMapArray, myrange, 1, totalWordMap.getClass());
-            //Arrays.allocate(charCountArray, myrange, 1);
-            //Arrays.allocate(charArrayArray, myrange, UNICODE);
+            try {
+                Arrays.allocate(wordMapArray, myrange, 1, (new HashMap<String, Integer>()).getClass());
+            } catch (InstantiationException ie) {
+                System.err.println(ie.getMessage());
+            } catch (IllegalAccessException iae) {
+                System.err.println(iae.getMessage());
+            }
         }
         
         mapBufs = ObjectBuf.rowSliceBuffers(wordMapArray, ranges);
         myMap = ObjectBuf.rowSliceBuffer(wordMapArray, myrange);
-        //charCounts = IntegerBuf.rowSliceBuffers(charCountArray, ranges);
-        //myCharCount = IntegerBuf.rowSliceBuffer(charCountArray, myrange);
-        //charArrays = IntegerBuf.rowSliceBuffers(charArrayArray, ranges);
-        //myCharArray = IntegerBuf.rowSliceBuffer(charArrayArray, myrange);
     } // wordCluster
 
 } // projclu
-// vim:noexpandtab sw=8 softtabstop=8
