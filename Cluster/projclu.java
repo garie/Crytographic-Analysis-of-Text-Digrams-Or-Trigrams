@@ -3,6 +3,7 @@
  */
 
 import edu.rit.mp.IntegerBuf;
+import edu.rit.mp.ObjectBuf;
 
 import edu.rit.pj.Comm;
 import edu.rit.pj.reduction.IntegerOp;
@@ -20,6 +21,7 @@ import java.util.Scanner;
 
 /**
  * Cluster implementation of Cryptographic Analyzer.
+ * This needs editing if used with >26 processors.
  *
  * @author dht5977: Daniel Tyler
  * @author cev5122: Christine Viets
@@ -32,6 +34,8 @@ public class projclu {
     
     /* Root processor */
     public static final int ROOT = 0;
+    
+    public static final int MAX_SIZE = 26;
     
   	public static final int NOT_UNICODE = 26;
 	public static final int UNICODE = (int)Character.MAX_VALUE -
@@ -72,7 +76,11 @@ public class projclu {
 
     /* Word containers */
 	static WordCounter wordCounter = null;
-    static HashMap<String, Integer> map;
+    //static HashMap<String, Integer> totalWordMap;
+    static WordCounter totalWordCounter;
+    static HashMap<String, Integer>[][] wordMapArray;
+    static ObjectBuf<HashMap<String, Integer>>[] mapBufs;
+    static ObjectBuf<HashMap<String, Integer>> myMap;
 
 	static String[] filenames;
 	static Stargram[] grams;
@@ -110,47 +118,28 @@ public class projclu {
         world = Comm.world();
         rank = world.rank();
         size = world.size();
+        if (size > MAX_SIZE) {
+            usage();
+        }
         ranges = new Range(0, size-1).subranges(size);
         myrange = ranges[rank];
 	
 		parseArgs(args);
         
-        
-        if (unicode) {
-            charRange = new Range(0, UNICODE-1);
-        }
-        else {
-            charRange = new Range(0, NOT_UNICODE-1);
-        }
-        charCountArray = new int[size][];
-        charArrayArray = new int[size][];
-        if (rank == ROOT) {
-            for (int i = 0; i < filenames.length; ++i) {
+        for (int i = 0; i < filenames.length; ++i) {
+            // this is inside the for loop because the other threads
+            // need to wait for the files to be split up
+            if (rank == ROOT) {
                 splitFile(new File(filenames[i]));
             }
-            
-            Arrays.allocate(charCountArray, 1);
-            if (unicode) {
-                Arrays.allocate(charArrayArray, UNICODE);
-            }
-            else {
-                Arrays.allocate(charArrayArray, NOT_UNICODE);
-            }       
-        }
-        else {
-            Arrays.allocate(charCountArray, myrange, 1);
-            if (unicode) {
-                Arrays.allocate(charArrayArray, myrange, UNICODE);
-            }
-            else {
-                Arrays.allocate(charArrayArray, myrange, NOT_UNICODE);
-            }
         }
         
-        charCounts = IntegerBuf.rowSliceBuffers(charCountArray, ranges);
-        myCharCount = IntegerBuf.rowSliceBuffer(charCountArray, myrange);
-        charArrays = IntegerBuf.rowSliceBuffers(charArrayArray, ranges);
-        myCharArray = IntegerBuf.rowSliceBuffer(charArrayArray, myrange);
+        if (findChars) {
+            charCluster();
+        }
+        if (findWords) {
+            wordCluster();
+        }
         
         for (int i = 0; i < filenames.length; ++i) {
 			readFile(filenames[i]);
@@ -176,6 +165,43 @@ public class projclu {
 		
     } // main
 	
+    /**
+     * Initialize cluster stuff for findChar
+     */
+    private static void charCluster () {
+        if (unicode) {
+            charRange = new Range(0, UNICODE-1);
+        }
+        else {
+            charRange = new Range(0, NOT_UNICODE-1);
+        }
+        charCountArray = new int[size][];
+        charArrayArray = new int[size][];
+        if (rank == ROOT) {
+            Arrays.allocate(charCountArray, 1);
+            if (unicode) {
+                Arrays.allocate(charArrayArray, UNICODE);
+            }
+            else {
+                Arrays.allocate(charArrayArray, NOT_UNICODE);
+            }       
+        }
+        else {
+            Arrays.allocate(charCountArray, myrange, 1);
+            if (unicode) {
+                Arrays.allocate(charArrayArray, myrange, UNICODE);
+            }
+            else {
+                Arrays.allocate(charArrayArray, myrange, NOT_UNICODE);
+            }
+        }
+        
+        charCounts = IntegerBuf.rowSliceBuffers(charCountArray, ranges);
+        myCharCount = IntegerBuf.rowSliceBuffer(charCountArray, myrange);
+        charArrays = IntegerBuf.rowSliceBuffers(charArrayArray, ranges);
+        myCharArray = IntegerBuf.rowSliceBuffer(charArrayArray, myrange);
+    } // charCluster
+    
     /**
      * parseArgs - parse the command line arguments
      */
@@ -409,17 +435,6 @@ public class projclu {
      */
     static void gatherAndReduce () throws Exception {
 
-        //static CharCounter charCounter;
-        //static IntegerBuf[] charCounts;
-        //static IntegerBuf mycharCount;
-        //static IntegerBuf[] charArrays;
-        //static IntegerBuf myCharArray;
-        
-        //static WordCounter wordCounter = null;
-        //static Stargram[] grams;
-        //static String[] firstgrams;
-        //static String[] lastgrams;
-
         if (findChars) {
             charCountArray[rank][0] = charCounter.getCharCount();
             charArrayArray[rank] = charCounter.getCharArray();
@@ -444,7 +459,31 @@ public class projclu {
         }
         
         if (findWords) {
+            //charCountArray[rank][0] = charCounter.getCharCount();
+            //charArrayArray[rank] = charCounter.getCharArray();
+            wordMapArray[rank][0] = wordCounter.getMap();
         
+            //world.gather (ROOT, myCharCount, charCounts);
+            //world.gather (ROOT, myCharArray, charArrays);
+            world.gather (ROOT, myMap, mapBufs);
+            
+            if (rank == ROOT) {
+            //    totalCharCount = 0;
+                //totalWordMap = new HashMap<String, Integer>();
+                totalWordCounter = new WordCounter(wordCounter.getNumTop());
+            //    if (unicode) {
+            //        totalCharArray = new int[UNICODE];
+            //    }
+            //    else {
+            //        totalCharArray = new int[NOT_UNICODE];
+            //    }
+                for (int i = 0; i < size; ++i) {
+                    totalWordCounter.reduce(wordMapArray[i][0]);
+            //        totalCharCount += charCountArray[i][0];
+            //        ReduceArrays.reduce(charArrayArray[i], charRange,
+            //                            totalCharArray, charRange, IntegerOp.SUM);
+                }
+            }
         }
         
         if (findGrams) {
@@ -491,8 +530,36 @@ public class projclu {
         
         System.out.println("-u     = parse files in unicode");
         System.out.println("\t\tDo not use with -s or -a options.");
+        
+        System.out.println(NEWLINE + "Max number of processes: " + MAX_SIZE);
 		
         System.exit(1);
     }
-          
+
+    /**
+     * Initialize the word cluster variables.
+     */
+    private static void wordCluster() {
+        //charRange = new Range(0, UNICODE-1);
+        //charCountArray = new int[size][];
+        wordMapArray = new HashMap<String, Integer>[size][];
+        if (rank == ROOT) {
+            Arrays.allocate(wordMapArray, 1, totalWordMap.getClass());
+            //Arrays.allocate(int[][] charCountArray, 1);
+            //Arrays.allocate(charArrayArray, UNICODE);
+        }
+        else {
+            Arrays.allocate(wordMapArray, myrange, 1, totalWordMap.getClass());
+            //Arrays.allocate(charCountArray, myrange, 1);
+            //Arrays.allocate(charArrayArray, myrange, UNICODE);
+        }
+        
+        mapBufs = ObjectBuf.rowSliceBuffers(wordMapArray, ranges);
+        myMap = ObjectBuf.rowSliceBuffer(wordMapArray, myrange);
+        //charCounts = IntegerBuf.rowSliceBuffers(charCountArray, ranges);
+        //myCharCount = IntegerBuf.rowSliceBuffer(charCountArray, myrange);
+        //charArrays = IntegerBuf.rowSliceBuffers(charArrayArray, ranges);
+        //myCharArray = IntegerBuf.rowSliceBuffer(charArrayArray, myrange);
+    } // wordCluster
+
 } // projclu

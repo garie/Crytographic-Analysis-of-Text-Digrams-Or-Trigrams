@@ -2,6 +2,8 @@
  * file: projseq.java
  */
 
+import edu.rit.pj.Comm;
+
 import java.util.Scanner;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -56,7 +58,11 @@ public class projseq {
      *           -a         Keep apostrophes
      *           -u         Unicode - implies keeping punctuation
      */
-    public static void main (String args[]) {
+    public static void main (String args[]) throws Exception {
+
+	long start = System.currentTimeMillis();
+
+	Comm.init(args);
 	
 		parseArgs(args);
 
@@ -65,6 +71,9 @@ public class projseq {
         }
 
 		print();
+
+	long end = System.currentTimeMillis();
+	System.out.println((end - start) + " msec");
 		
     } // main
 	

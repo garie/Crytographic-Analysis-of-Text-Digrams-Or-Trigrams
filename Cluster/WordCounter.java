@@ -53,11 +53,53 @@ public class WordCounter {
     } // add (String, Integer)
 
     /**
+     * Convert a WordCounter map to two arrays.
+     */
+    private static void convert (HashMap<String, Integer> map,
+                                 String[] strResult,
+                                 int[] countResult) {
+        strResult = new String[map.size()];
+        int i = 0;
+        for (String s : map.keySet()) {
+            strResult[i] = s;
+            countResult[i++] = map.get(s);
+        }
+    }
+
+    /**
+     * Convert string and int array to HashMap.
+     */
+    private static HashMap<String, Integer> convert (String[] strs, int[] counts) {
+        HashMap<String, Integer> result = new HashMap<String, Integer>();
+        for (int i = 0; i < strs.length; ++i) {
+            result.put(strs[i], new Integer(counts[i]));
+        }
+        return result;
+    }
+    
+    /**
+     * Get the map of word counts.
+     */
+    public HashMap<String, Integer> getMap () {
+        return map;
+    } // getMap
+    
+    /**
      * Returns the number of top words to print.
      */    
     public int getNumTop() {
         return numTop;
     } // getNumTop
+    
+    /**
+     * Adds all words from other map to this one.
+     */
+    public void reduce (HashMap<String, Integer> other) {
+        for (String s : other.keySet()) {
+            Integer i = other.remove(s);
+            add(s, i);
+        }
+    } // reduce (HashMap)
     
     /**
      * Adds all words from other WordCounter to this one.
@@ -67,7 +109,7 @@ public class WordCounter {
             Integer i = other.map.remove(s);
             add(s, i);
         }
-    } // reduce
+    } // reduce (WordCounter)
 
     /**
      * Returns String representations of the top n words.
