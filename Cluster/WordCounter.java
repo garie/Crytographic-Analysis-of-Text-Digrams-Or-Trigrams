@@ -96,7 +96,7 @@ public class WordCounter {
      */
     public void reduce (HashMap<String, Integer> other) {
         for (String s : other.keySet()) {
-            Integer i = other.remove(s);
+            Integer i = other.get(s);
             add(s, i);
         }
     } // reduce (HashMap)

@@ -283,7 +283,7 @@ public class projseq {
 
             // Clear the "last" holder from the *grams for a new file.
             for (Stargram s : grams) {
-                s.clearLast();
+                s.clear();
             }
                 
         } catch (FileNotFoundException e) {

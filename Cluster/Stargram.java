@@ -2,6 +2,8 @@
  * file: Stargram.java
  */
  
+import java.io.Serializable;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -9,7 +11,7 @@ import java.util.Iterator;
 /**
  * Creates and keeps track of *grams.
  */
-public class Stargram {
+public class Stargram implements Serializable {
 
     /* The length of this *gram */
 	private int length;
@@ -25,6 +27,11 @@ public class Stargram {
 	private String last;
 
     /**
+     * This is necessary for Serializable.
+     */
+    public Stargram () { }
+    
+    /**
      * Constructor
      */
 	public Stargram (int length, int numTop) {
@@ -39,8 +46,8 @@ public class Stargram {
      * Add a single character.
      */	
 	private void add (char c) {
-        if (first.length() < this.length) {
-            last += c;
+        if (first.length() < this.length-1) {
+            first += c;
         }
 
 		if (last.length() < this.length) {
@@ -85,6 +92,19 @@ public class Stargram {
 			map.put(gram, count);
 		}
     } // add (String, Integer)
+    
+    /**
+     * Add just one gram to this - ignore first and last.
+     */
+    public void addOne (String gram) {
+        Integer i = map.get(gram);
+        if (i != null) {
+            map.put(gram, i + 1);
+        }
+        else {
+            map.put(gram, new Integer(1));
+        }
+    }
     
     /**
      * Clear the last part read.
