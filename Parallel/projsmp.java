@@ -10,6 +10,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import edu.rit.pj.ParallelTeam;
 import edu.rit.pj.ParallelRegion;
+import edu.rit.pj.Comm;
 /**
  * Sequential implementation of Cryptographic Analyzer.
  *
@@ -63,6 +64,7 @@ public class projsmp {
     public static void main (String args[]) throws Exception{
 	
 	    long t = System.currentTimeMillis();
+	    Comm.init( args );
 
 	    parseArgs(args);
 
