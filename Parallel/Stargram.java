@@ -126,4 +126,4 @@ public class Stargram {
 		return result;
 	} // top ()
 	
-} // Stargram
+} // Stargram// vim:noexpandtab sw=8 softtabstop=8

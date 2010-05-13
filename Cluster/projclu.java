@@ -329,3 +329,4 @@ public class projclu {
     }
           
 } // projclu
+// vim:noexpandtab sw=8 softtabstop=8
